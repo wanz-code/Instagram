@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wanz — IG Downloader (Preview)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1724; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8;
+}
+*{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+html,body{height:100%}
+body{
+  margin:0;background:linear-gradient(180deg,#071023 0%, #081426 100%);color:#e6eef6;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px;
+}
+.app{width:100%;max-width:980px}
+.header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+.logo{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#021124;background:linear-gradient(135deg,var(--accent),#7c3aed)}
+.title{margin:0}
+.lead{margin:0;color:var(--muted);font-size:13px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+.form{display:flex;gap:8px}
+.input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+.btn{padding:10px 12px;border-radius:10px;border:0;background:linear-gradient(90deg,var(--accent),#7c3aed);color:#021124;font-weight:700;cursor:pointer}
+.hint{font-size:12px;color:var(--muted);margin-top:10px}
+.results{margin-top:16px;display:flex;flex-direction:column;gap:18px}
+.media-card{background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-radius:10px;padding:12px;overflow:hidden}
+.media-view{width:100%;border-radius:8px;background:#061226}
+.media-view img, .media-view video{width:100%;height:auto;border-radius:8px;display:block}
+.meta{margin-top:8px;color:var(--muted);font-size:13px;line-height:1.3}
+.caption{white-space:pre-wrap;margin-top:6px;color:#e6eef6}
+.actions{display:flex;gap:8px;margin-top:10px}
+.actions .btn-outline{flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;cursor:pointer;font-weight:700}
+.center{display:flex;align-items:center;justify-content:center}
+.spinner{width:28px;height:28px;border-radius:50%;border:4px solid rgba(255,255,255,0.06);border-top-color:var(--accent);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* slider */
+.slider{position:relative;overflow:hidden;border-radius:8px}
+.track{display:flex;transition:transform .36s ease}
+.slide{flex:0 0 100%;display:flex;align-items:center;justify-content:center}
+.nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.45);border:0;color:#fff;padding:8px;border-radius:50%;cursor:pointer}
+.nav.prev{left:10px}
+.nav.next{right:10px}
+
+/* popup */
+.popup{position:fixed;left:50%;top:28px;transform:translateX(-50%) translateY(-10px);background:var(--card);color:#fff;padding:12px 18px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.45);opacity:0;pointer-events:none;z-index:9999}
+.popup.show{animation:popIn .45s cubic-bezier(.2,.9,.3,1) forwards, popOut .45s ease forwards 2.6s}
+@keyframes popIn{from{opacity:0;transform:translateX(-50%) translateY(-18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+@keyframes popOut{to{opacity:0;transform:translateX(-50%) translateY(-12px) scale(.98)}}
+
+/* footer */
+.footer{text-align:center;margin-top:12px;color:var(--muted);font-size:13px}
+
+/* small screens */
+@media (max-width:520px){
+  .logo{width:48px;height:48px}
+  .btn{padding:9px 10px}
+  .input{padding:10px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="logo">WZ</div>
+    <div>
+      <h3 class="title">Wanz — IG Downloader</h3>
+      <p class="lead">Preview langsung — play video & slide foto</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="dlForm" class="form" onsubmit="return false">
+      <input id="urlInput" class="input" placeholder="Tempel link postingan Instagram (mis. https://www.instagram.com/reel/....)" />
+      <button id="goBtn" class="btn" type="button">Ambil</button>
+    </form>
+
+    
+
+    <div id="results" class="results"></div>
+  </div>
+
+  <div class="footer">© Wanz Official</div>
+</div>
+
+<div id="popup" class="popup" role="status" aria-live="polite"></div>
+
+<script>
+const API = 'https://api.ownblox.my.id/api/igdl?url=';
+const form = document.getElementById('dlForm');
+const urlInput = document.getElementById('urlInput');
+const goBtn = document.getElementById('goBtn');
+const resultsEl = document.getElementById('results');
+const popup = document.getElementById('popup');
+
+function showPopup(msg){
+  popup.textContent = msg;
+  popup.classList.remove('show');
+  void popup.offsetWidth;
+  popup.classList.add('show');
+}
+
+/* helper: open media in new tab */
+function openInNewTab(url){
+  try{ window.open(url, '_blank').focus(); }
+  catch(e){ showPopup('Gagal membuka tab'); }
+}
+
+/* render one media card - supports single or mixed items (slider) */
+function renderCard(items, igUrl){
+  // items: array of objects from API (each has type, download_url, thumbnail, caption, username, likes, comments)
+  const card = document.createElement('div');
+  card.className = 'media-card';
+
+  // header/meta
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'meta';
+  const first = items[0];
+  metaDiv.innerHTML = `<strong>@${escapeHtml(first.username || '')}</strong>
+    &nbsp; · &nbsp;<span>${first.likes !== undefined ? numberWithCommas(first.likes) + ' ♥' : ''}</span>
+    &nbsp;<span style="color:var(--muted)"> ${first.comments ? '· ' + numberWithCommas(first.comments) + ' 💬' : ''}</span>
+    <div class="caption">${escapeHtml(first.caption || '')}</div>`;
+  card.appendChild(metaDiv);
+
+  // media area: if more than 1 -> slider; else single view
+  if(items.length > 1){
+    const slider = document.createElement('div');
+    slider.className = 'slider';
+    const track = document.createElement('div');
+    track.className = 'track';
+    track.style.width = (items.length * 100) + '%';
+    // each slide
+    items.forEach(it => {
+      const slide = document.createElement('div');
+      slide.className = 'slide';
+      slide.style.width = (100 / items.length) + '%';
+      const wrapper = document.createElement('div');
+      wrapper.style.width = '100%';
+      if(isVideo(it)) {
+        const v = document.createElement('video');
+        v.className = 'media-view';
+        v.controls = true;
+        v.src = it.download_url;
+        wrapper.appendChild(v);
+      } else {
+        const img = document.createElement('img');
+        img.className = 'media-view';
+        img.src = it.download_url || it.thumbnail || '';
+        img.alt = it.filename || '';
+        wrapper.appendChild(img);
+      }
+      slide.appendChild(wrapper);
+      track.appendChild(slide);
+    });
+    slider.appendChild(track);
+
+    const prev = document.createElement('button');
+    prev.className = 'nav prev';
+    prev.innerHTML = '&#10094;';
+    const next = document.createElement('button');
+    next.className = 'nav next';
+    next.innerHTML = '&#10095;';
+    slider.appendChild(prev); slider.appendChild(next);
+
+    card.appendChild(slider);
+
+    // actions (global for slider)
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn-outline';
+    viewBtn.textContent = 'Lihat Post';
+    viewBtn.onclick = () => openInNewTab(igUrl);
+
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'btn-outline';
+    dlBtn.textContent = 'Download Current';
+    dlBtn.onclick = () => {
+      // open current slide's download_url
+      const idx = currentIndex;
+      const cur = items[idx];
+      openInNewTab(cur.download_url);
+    };
+    actions.appendChild(viewBtn); actions.appendChild(dlBtn);
+    card.appendChild(actions);
+
+    // slider logic
+    let currentIndex = 0;
+    function update(){
+      track.style.transform = `translateX(-${currentIndex * (100 / items.length)}%)`;
+    }
+    prev.onclick = () => { currentIndex = (currentIndex - 1 + items.length) % items.length; update(); };
+    next.onclick = () => { currentIndex = (currentIndex + 1) % items.length; update(); };
+
+    // keyboard
+    slider.addEventListener('keydown', e => {
+      if(e.key === 'ArrowLeft') prev.click();
+      if(e.key === 'ArrowRight') next.click();
+    });
+
+    // touch swipe
+    let startX = 0, dx = 0;
+    slider.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true});
+    slider.addEventListener('touchmove', e => { dx = e.touches[0].clientX - startX; }, {passive:true});
+    slider.addEventListener('touchend', e => {
+      if(Math.abs(dx) > 40){
+        if(dx < 0) next.click(); else prev.click();
+      }
+      startX = dx = 0;
+    });
+
+  } else {
+    // single item
+    const it = items[0];
+    const mediaWrap = document.createElement('div');
+    mediaWrap.className = 'media-view';
+    if(isVideo(it)){
+      const v = document.createElement('video');
+      v.controls = true;
+      v.src = it.download_url;
+      v.style.borderRadius = '8px';
+      v.style.width = '100%';
+      mediaWrap.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.src = it.download_url || it.thumbnail || '';
+      img.alt = it.filename || '';
+      img.style.width = '100%';
+      img.style.borderRadius = '8px';
+      mediaWrap.appendChild(img);
+    }
+    const container = document.createElement('div');
+    container.appendChild(mediaWrap);
+    card.appendChild(container);
+
+    // actions
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn-outline';
+    viewBtn.textContent = 'Lihat Post';
+    viewBtn.onclick = () => openInNewTab(igUrl);
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'btn-outline';
+    dlBtn.textContent = 'Download';
+    dlBtn.onclick = () => openInNewTab(it.download_url);
+    actions.appendChild(viewBtn); actions.appendChild(dlBtn);
+    card.appendChild(actions);
+  }
+
+  return card;
+}
+
+/* utils */
+function isVideo(item){
+  if(!item || !item.type) return false;
+  return String(item.type).toLowerCase().includes('mp4') || String(item.type).toLowerCase().includes('video');
+}
+function numberWithCommas(x){ if(x===undefined||x===null) return ''; return String(x).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+/* main fetch */
+async function fetchAndRender(igUrl){
+  resultsEl.innerHTML = '<div class="center"><div class="spinner" aria-hidden="true"></div></div>';
+  try{
+    const res = await fetch(API + encodeURIComponent(igUrl));
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+
+    // find items robustly
+    let items = [];
+    if(Array.isArray(json.result)) items = json.result;
+    else if(json.result && Array.isArray(json.result.data)) items = json.result.data;
+    else if(json.result && json.result.url) items = [json.result]; // single object
+    else if(Array.isArray(json.data)) items = json.data;
+
+    // normalize to have download_url, type, thumbnail, caption, username, likes, comments
+    items = items.map(it => ({
+      download_url: it.download_url || it.url || it.download || it.src || '',
+      type: (it.type || '').toString(),
+      thumbnail: it.thumbnail || it.thumb || '',
+      caption: it.caption || it.text || '',
+      username: it.username || '',
+      likes: it.likes || it.like || it.likes_count || '',
+      comments: it.comments || it.comment || it.comment_count || ''
+    })).filter(x => x.download_url);
+
+    resultsEl.innerHTML = '';
+    if(!items.length){
+      showPopup('Tidak ada media ditemukan pada respons API.');
+      return;
+    }
+
+    // if multiple items, render grouped card; otherwise single card(s)
+    // We'll group all into one card (Instagram post usually group)
+    const card = renderCard(items, igUrl);
+    resultsEl.appendChild(card);
+    showPopup('Selesai — media siap dipreview');
+  }catch(err){
+    console.error(err);
+    resultsEl.innerHTML = '';
+    showPopup('Terjadi kesalahan: ' + (err.message || 'unknown'));
+  }
+}
+
+/* wire up */
+goBtn.addEventListener('click', () => {
+  const url = urlInput.value.trim();
+  if(!url){ showPopup('Masukkan link Instagram dulu'); return; }
+  fetchAndRender(url);
+});
+urlInput.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); goBtn.click(); } });
+
+</script>
+</body>
+</html>
